@@ -1,0 +1,42 @@
+
+Ledger:
+
+Theaters (create with CC Init):
+ID?     Name    Address                 Phone           URL             Halls
+        Regal1  1313 Mockingbird Lane   919 555-5555    regal1apex.com  5
+                Apex, NC 27502    
+
+Shows (create with CC Init):
+Could have showId or composite key of theater:hall:dateTime:movie
+showId  theater hall    movie                   dateTime                    price   numSeats    tixSold
+1       Regal1  1       Rambo                   2019-02-05T13:00:00-05:00   10      100
+2       Regal1  2       Star Wars               2019-02-05T13:00:00-05:00   10      100
+3       Regal1  3       Aliens                  2019-02-05T13:00:00-05:00   10      100
+4       Regal1  4       Jaws                    2019-02-05T13:00:00-05:00   10      100
+5       Regal1  5       Back to the Future      2019-02-05T13:00:00-05:00   10      100
+
+
+Is this a different chaincode? 
+Cafeteria (create with transactions stock, buy, exchange):
+Note: this design keeps a running count, while ticket sales are cumulative
+Either way, 2 txns on a block cannot both update
+theater     type(soda, water, popcorn)      inventory           
+Regal1      soda                            10000
+Regal1      water                           10000
+Regal1      popcorn                         10000
+
+Ticket Sales (created with transactions):
+txnId   showId  quantity    dateTime                    revenue             numSodas    seller
+1       1       4           2019-02-05T13:00:00-05:00   quantity * price    4           W1
+
+mtix chaincode transactions:
+buy  (1 or more,  100 max for each movie, use numSeats)
+    - if window1, buyer gets 1 bottle of water and 1 popcorn per ticket
+        - also, if even(rand) buyer exchanges water for soda
+    - print transaction (log file) and write to Ledger
+
+
+cafeteria chaincode transactions:
+stock   (add to inventory for soda, water or popcorn)
+buy     mixed orders?  // not in requirements
+exchange    (exchange water for soda)

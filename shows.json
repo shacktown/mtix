@@ -1,0 +1,47 @@
+[
+    {
+        "showId": 1,
+        "theater": "Regal1",
+        "hall": 1,
+        "movie": "Rambo",
+        "dateTime": "2019-02-05T13:00:00-05:00",
+        "price": 10,
+        "numSeats": 100
+    },
+    {
+        "showId": 2,
+        "theater": "Regal1",
+        "hall": 2,
+        "movie": "Star Wars",
+        "dateTime": "2019-02-05T13:00:00-05:00",
+        "price": 10,
+        "numSeats": 100
+    },
+    {
+        "showId": 3,
+        "theater": "Regal1",
+        "hall": 3,
+        "movie": "Aliens",
+        "dateTime": "2019-02-05T13:00:00-05:00",
+        "price": 10,
+        "numSeats": 100
+    },
+    {
+        "showId": 4,
+        "theater": "Regal1",
+        "hall": 4,
+        "movie": "Jaws",
+        "dateTime": "2019-02-05T13:00:00-05:00",
+        "price": 10,
+        "numSeats": 100
+    },
+    {
+        "showId": 3,
+        "theater": "Regal1",
+        "hall": 4,
+        "movie": "Back to the Future",
+        "dateTime": "2019-02-05T13:00:00-05:00",
+        "price": 10,
+        "numSeats": 100
+    }
+]
