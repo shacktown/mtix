@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
 
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 	"github.com/hyperledger/fabric/protos/peer"
@@ -13,21 +15,22 @@ type SimpleAsset struct {
 }
 
 // MovieShowing represents a movie showtime including:
-// showId (key), theater name, hall name,  movie name, date/time of the showing,
+// showId (key), theater name, Hall name,  movie name, date/time of the showing,
 // 	ticket price, numSeats (max tickets), tixSold (number of tickets sold)
 type MovieShowing struct {
-	theater  string
-	movie    string
-	dateTime string
-	price    string
-	numSeats string
-	tixSold  string
+	Theater  string
+	Hall     string
+	Movie    string
+	DateTime string
+	Price    string
+	NumSeats string
+	TixSold  string
 }
 
 // Movie represents a schedule movie showing along with it's unique showID key
 type Movie struct {
-	showID string
-	show   MovieShowing
+	ShowID string
+	Show   MovieShowing
 }
 
 // Init is called during chaincode instantiation to initialize data
@@ -58,6 +61,8 @@ func (t *SimpleAsset) Invoke(stub shim.ChaincodeStubInterface) peer.Response {
 	var err error
 	if fn == "ScheduleShow" {
 		result, err = ScheduleMovieShowing(stub, args)
+	} else if fn == "BuyTix" {
+		result, err = BuyTix(stub, args)
 	} else { // assume 'get' even if fn is nil
 		result, err = get(stub, args)
 	}
@@ -67,6 +72,92 @@ func (t *SimpleAsset) Invoke(stub shim.ChaincodeStubInterface) peer.Response {
 
 	// Return the result as success payload
 	return shim.Success([]byte(result))
+}
+
+/*
+TicketPurchase (created with transactions):
+txnId   showId  quantity    purchaseTime                    revenue             numSodas    seller
+1       1       4           2019-02-05T13:00:00-05:00   quantity * price    4           W1
+*/
+type TicketPurchase struct {
+	TxnID        string
+	ShowID       string
+	Quantity     string
+	PurchaseTime string
+	Revenue      string
+	NumSodas     string
+	Seller       string
+}
+
+// BuyTix purchases 1 or more tickets (quantity) for a specific movie showing
+// from a specified seller (window number). This reduces the number of tix available
+// The purchase transaction is added to the ledger.
+// If the key exists, it will override the value with the new one
+func BuyTix(stub shim.ChaincodeStubInterface, args []string) (string, error) {
+	printArgs("BuyTix", args)
+
+	if len(args) != 3 {
+		fmt.Println("BuyTix(): Incorrect number of arguments. Expecting 3")
+		return "", errors.New("BuyTix() : Incorrect number of arguments. Expecting 3 ")
+	}
+
+	var buytix TicketPurchase
+	//TODO get the txn ID or produce it
+	buytix.TxnID = "buyTxn1"
+
+	// args:  showId, quantity, seller
+	buytix.ShowID = args[0]
+	buytix.Quantity = args[1]
+	buytix.Seller = args[2]
+
+	// TODO - get dateTime
+	buytix.PurchaseTime = "2019-02-05T13:00:00-05:00"
+	//TODO compute revenue
+	buytix.Revenue = "100.00"
+	buytix.NumSodas = "0"
+	if buytix.Seller == "window1" {
+		buytix.NumSodas = buytix.Quantity
+	}
+	fmt.Println("BuyTix() - purchase attributes : ", buytix)
+	buytixJSON, err := json.Marshal(buytix)
+	if err != nil {
+		fmt.Println("buytix to buytixJSON error: ", err)
+		return "", err
+	}
+	fmt.Println("buytix to buytixJSON created: ", string(buytixJSON))
+
+	//get show information, verify tickets are available and update tickets sold
+	bytes, err := stub.GetState(buytix.ShowID)
+	if err != nil {
+		return "", fmt.Errorf("BuyTix failed to get show information for: %s", buytix.ShowID)
+	}
+	fmt.Println("---------------- Here is the byte string", string(bytes))
+
+	var movieShowing MovieShowing
+	err = json.Unmarshal(bytes, &movieShowing)
+	var q, _ = strconv.Atoi(buytix.Quantity)
+	var n, _ = strconv.Atoi(movieShowing.NumSeats)
+	var s, _ = strconv.Atoi(movieShowing.TixSold)
+	if q > (n - s) {
+		return "", fmt.Errorf("Failed to complete ticket purchase - not enough tickets left. txnId=%s", buytix.TxnID)
+	}
+	//update the show with the new number of purchased tickets
+	movieShowing.TixSold = fmt.Sprintf("%d", s+q)
+	showJSON, err := json.Marshal(movieShowing)
+	if err != nil {
+		fmt.Println("movieShowing to showJSON error: ", err)
+		return "", err
+	}
+	err = stub.PutState(buytix.ShowID, showJSON)
+	if err != nil {
+		return "", fmt.Errorf("BuyTix failed to update purchased quantify for: %s", buytix.ShowID)
+	}
+	err = stub.PutState(buytix.TxnID, buytixJSON)
+	if err != nil {
+		return "", fmt.Errorf("Failed to complete ticket purchase for: %s", string(buytixJSON))
+	}
+	return string(buytixJSON), nil
+
 }
 
 // ScheduleMovieShowing schedules and stores the provided movie showing on the ledger.
@@ -81,7 +172,7 @@ func ScheduleMovieShowing(stub shim.ChaincodeStubInterface, args []string) (stri
 		fmt.Println("show to showJSON error: ", err)
 		return "", err
 	}
-	fmt.Println("show to showJSON created: ", showJSON)
+	fmt.Println("show to showJSON created: ", string(showJSON))
 
 	err = stub.PutState("show1", showJSON)
 	if err != nil {
@@ -107,23 +198,20 @@ func get(stub shim.ChaincodeStubInterface, args []string) (string, error) {
 }
 
 //CreateMovieShowing creates a new movie showing object
-//including the theater, hall, date, time, price, etc.
+//including the Theater, Hall, date, time, price, etc.
 func CreateMovieShowing(args []string) (MovieShowing, error) {
 
 	var aShow MovieShowing
 
-	fmt.Println("CreateMovieShowing() args:  ")
-	for i := 0; i < len(args); i++ {
-		fmt.Println("args:", i, args[i])
-	}
-	/*
-		if len(args) != 7 {
-			fmt.Println("CreateMovieShowing(): Incorrect number of arguments. Expecting 7 ")
-			return aShow, errors.New("CreateMovieShowing() : Incorrect number of arguments. Expecting 7 ")
-		}*/
+	printArgs("CreateMovieShowing", args)
 
-	aShow = MovieShowing{args[0], args[1], args[2], args[3], args[4], args[5]}
-	fmt.Println("CreateMovieShowing() : Show Object : ", aShow)
+	if len(args) != 7 {
+		fmt.Println("CreateMovieShowing(): Incorrect number of arguments. Expecting 7 ")
+		return aShow, errors.New("CreateMovieShowing() : Incorrect number of arguments. Expecting 7 ")
+	}
+
+	aShow = MovieShowing{args[0], args[1], args[2], args[3], args[4], args[5], args[6]}
+	fmt.Println("CreateMovieShowing() - Show attributes : ", aShow)
 
 	return aShow, nil
 }
@@ -132,5 +220,12 @@ func CreateMovieShowing(args []string) (MovieShowing, error) {
 func main() {
 	if err := shim.Start(new(SimpleAsset)); err != nil {
 		fmt.Printf("Error starting SimpleAsset chaincode: %s", err)
+	}
+}
+
+func printArgs(caller string, args []string) {
+	fmt.Println(caller, "() args:  ")
+	for i := 0; i < len(args); i++ {
+		fmt.Println("args:", i, args[i])
 	}
 }
