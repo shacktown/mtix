@@ -67,6 +67,10 @@ func (t *SimpleAsset) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 		_, err = TicketsAvailable(stub, args)
 	} else if fn == "ConcessionsAvailable" {
 		_, err = ConcessionsAvailable(stub, args)
+	} else if fn == "SodasAvailable" {
+		_, err = SodasAvailable(stub, args)
+	} else if fn == "ExchangeWaterSoda" {
+		result, err = ExchangeWaterSoda(stub, args)
 	} else { // assume 'get' even if fn is nil
 		result, err = get(stub, args)
 	}
@@ -271,21 +275,32 @@ type ConPurchase struct {
 	Theater      string
 	ConID        string
 	Quantity     string
-	PurchaseTime string
 	Revenue      string
-	ShowTime     string
+	PurchaseTime string
+}
+
+// SodaCount represents the number of Soda's purchased for each showTime
+//	a limit of 200 sodas per show is enforced
+type SodaCount struct {
+	ShowTime string
+	Quantity string
 }
 
 // StockConcession sets the inventory of specified concession to the specified value
 func StockConcession(stub shim.ChaincodeStubInterface, args []string) (string, error) {
 
 	printArgs("StockConcession", args)
-	if len(args) != 4 {
-		msg := fmt.Sprintf("StockConcession(): Incorrect number of arguments. Expecting 4 received %d", len(args))
+	if len(args) != 3 {
+		msg := fmt.Sprintf("StockConcession(): Incorrect number of arguments. Expecting 3 received %d", len(args))
 		return "", errors.New(msg)
 	}
 
-	con := Concession{args[0], args[1], args[2], args[3]}
+	// Use composite key for concessions including theater and concession type
+	//E.g.  Regal1-popcorn
+	theater := args[0]
+	concession := args[1]
+	id := fmt.Sprintf("%s-%s", theater, concession)
+	con := Concession{theater, concession, args[2], args[3]}
 
 	conJSON, err := json.Marshal(con)
 	if err != nil {
@@ -294,12 +309,31 @@ func StockConcession(stub shim.ChaincodeStubInterface, args []string) (string, e
 	}
 	fmt.Println("con to conJSON created: ", string(conJSON))
 
-	err = stub.PutState(con.ConID, conJSON)
+	err = stub.PutState(id, conJSON)
 	if err != nil {
 		return "", fmt.Errorf("Failed to stock: %s", args[0])
 	}
 	results := fmt.Sprintf("Stock created ConID=%s Quantity=%s", con.ConID, con.Inventory)
 	return results, nil
+}
+
+// ExchangeWaterSoda exchanges 1 water for 1 soda, for the provided Theater and showTime
+func ExchangeWaterSoda(stub shim.ChaincodeStubInterface, args []string) (string, error) {
+	printArgs("BuyConcession", args)
+	if len(args) != 2 {
+		msg := fmt.Sprintf("ExchangeWaterSoda(): Incorrect number of arguments. Expecting 2 received %d", len(args))
+		return "", errors.New(msg)
+	}
+	theater := args[0]
+	showTime := args[1]
+	// first buy buy -1 water then buy 1 soda
+	newargs := [4]string{theater, "Water", "-1", ""}
+	var myArgs = newargs[:]
+	res, err := BuyConcession(stub, myArgs)
+	newargs = [4]string{theater, "Soda", "1", showTime}
+	myArgs = newargs[:]
+	res, err = BuyConcession(stub, myArgs)
+	return res, err
 }
 
 // BuyConcession purchases 1 or more units (quantity) for a specific concession type
@@ -320,14 +354,22 @@ func BuyConcession(stub shim.ChaincodeStubInterface, args []string) (string, err
 	buycon.Theater = args[0]
 	buycon.ConID = args[1]
 	buycon.Quantity = args[2]
-	buycon.ShowTime = args[3]
-
 	//first, verify that enough tickets are available
 	concession, err := ConcessionsAvailable(stub, args)
 	if err != nil {
 		//not enough available
 		fmt.Println(err)
 		return "", err
+	}
+
+	//Make sure there are enough sodas for this showTime
+	if buycon.ConID == "soda" {
+		_, err = SodasAvailable(stub, args[2:])
+		if err != nil {
+			//not enough sodas available for this showtime
+			fmt.Println(err)
+			return "", err
+		}
 	}
 	// Set current date / time as purchase date
 	t := time.Now()
@@ -404,6 +446,50 @@ func ConcessionsAvailable(stub shim.ChaincodeStubInterface, args []string) (Conc
 
 	return con, nil
 }
+
+// SodasAvailable verifies a quantity of sodas are available for a given showTime
+func SodasAvailable(stub shim.ChaincodeStubInterface, args []string) (SodaCount, error) {
+
+	var scount SodaCount
+	if len(args) != 2 {
+		msg := fmt.Sprintf("SodasAvailable(): Incorrect number of arguments. Expecting 2, received %d", len(args))
+		return scount, errors.New(msg)
+	}
+	// args:  theater, concession type, quantity
+	quantity := args[0]
+	showTime := args[1]
+
+	bytes, err := stub.GetState(showTime)
+	if err != nil {
+		return scount, fmt.Errorf("SodasAvailable() failed to get current quantity for showTime: %s", showTime)
+	}
+
+	err = json.Unmarshal(bytes, &scount)
+	curr, _ := strconv.Atoi(scount.Quantity)
+	new, _ := strconv.Atoi(quantity)
+	total := curr + new
+	if total > 200 {
+		return scount, fmt.Errorf("Error - Out of Concessions: 200 sodas is the limit for a single showTime. Attempting to buy %s units of sodas for showTime %s, but  %s have been sold", quantity, showTime, scount.Quantity)
+	}
+	fmt.Printf("Sodas sold for showTime %s is %s, now requesting %s", showTime, scount.Quantity, quantity)
+
+	//update the showTime with the new number of purchased sodas
+	quantity = fmt.Sprintf("%d", total)
+	scount = SodaCount{showTime, quantity}
+	sodaJSON, err := json.Marshal(scount)
+	if err != nil {
+		fmt.Println("scount to sodaJSON error: ", err)
+		return scount, err
+	}
+	err = stub.PutState(showTime, sodaJSON)
+	if err != nil {
+		return scount, fmt.Errorf("SodasAvailable failed to update purchased quantity for showTime: %s", showTime)
+	}
+
+	return scount, nil
+}
+
+var queryString = "{\"selector\": {\"Hall\": \"hall1\"}}"
 
 // main function starts up the chaincode in the container during instantiate
 func main() {
