@@ -31,20 +31,7 @@ type MovieShowing struct {
 
 // Init is called during chaincode instantiation to initialize data
 func (t *SimpleAsset) Init(stub shim.ChaincodeStubInterface) peer.Response {
-	// Get the args from the transaction proposal
-	/*   args := stub.GetStringArgs()
-	if len(args) != 2 {
-	        return shim.Error("Incorrect arguments. Expecting a key and a value")
-	}
-	*/
-	// Set up any variables or assets here by calling stub.PutState()
-
-	// We store the key and the value on the ledger
-	/*   err := stub.PutState(args[0], []byte(args[1]))
-	    if err != nil {
-	            return shim.Error(fmt.Sprintf("Failed to create asset: %s", args[0]))
-		}
-	*/
+	// Init is currently not used to initialize any data on the ledger
 	return shim.Success(nil)
 }
 
@@ -57,10 +44,10 @@ func (t *SimpleAsset) Invoke(stub shim.ChaincodeStubInterface) pb.Response {
 	var err error
 	if fn == "ScheduleShow" {
 		result, err = ScheduleMovieShowing(stub, args)
-	} else if fn == "BuyTix" {
-		result, err = BuyTix(stub, args)
 	} else if fn == "StockConcession" {
 		result, err = StockConcession(stub, args)
+	} else if fn == "BuyTix" {
+		result, err = BuyTix(stub, args)
 	} else if fn == "BuyConcession" {
 		result, err = BuyConcession(stub, args)
 	} else if fn == "TicketsAvailable" {
@@ -167,6 +154,7 @@ func BuyTix(stub shim.ChaincodeStubInterface, args []string) (string, error) {
 // ScheduleMovieShowing schedules and stores the provided movie showing on the ledger.
 // If the key exists, it will override the value with the new one
 func ScheduleMovieShowing(stub shim.ChaincodeStubInterface, args []string) (string, error) {
+	printArgs("ScheduleMovieShowing", args)
 	txID := args[0]
 	show, err := CreateMovieShowing(args[1:])
 	if err != nil {
@@ -189,7 +177,7 @@ func ScheduleMovieShowing(stub shim.ChaincodeStubInterface, args []string) (stri
 
 // TicketsAvailable verifies a quantity of tickets are available for a given show
 func TicketsAvailable(stub shim.ChaincodeStubInterface, args []string) (MovieShowing, error) {
-
+	printArgs("TicketsAvailable", args)
 	var show MovieShowing
 	if len(args) != 2 {
 		fmt.Println("TicketsAvailable(): Incorrect number of arguments. Expecting 3, received", len(args))
@@ -290,8 +278,8 @@ type SodaCount struct {
 func StockConcession(stub shim.ChaincodeStubInterface, args []string) (string, error) {
 
 	printArgs("StockConcession", args)
-	if len(args) != 3 {
-		msg := fmt.Sprintf("StockConcession(): Incorrect number of arguments. Expecting 3 received %d", len(args))
+	if len(args) != 4 {
+		msg := fmt.Sprintf("StockConcession(): Incorrect number of arguments. Expecting 4 received %d", len(args))
 		return "", errors.New(msg)
 	}
 
@@ -361,16 +349,6 @@ func BuyConcession(stub shim.ChaincodeStubInterface, args []string) (string, err
 		fmt.Println(err)
 		return "", err
 	}
-
-	//Make sure there are enough sodas for this showTime
-	if buycon.ConID == "soda" {
-		_, err = SodasAvailable(stub, args[2:])
-		if err != nil {
-			//not enough sodas available for this showtime
-			fmt.Println(err)
-			return "", err
-		}
-	}
 	// Set current date / time as purchase date
 	t := time.Now()
 	nowFormatted := fmt.Sprintf("%d-%02d-%02dT%02d:%02d:%02d",
@@ -412,7 +390,7 @@ func BuyConcession(stub shim.ChaincodeStubInterface, args []string) (string, err
 
 // ConcessionsAvailable verifies a quantity of concession units are available for a given type
 func ConcessionsAvailable(stub shim.ChaincodeStubInterface, args []string) (Concession, error) {
-
+	printArgs("ConcessionsAvailable", args)
 	var con Concession
 	if len(args) != 4 {
 		msg := fmt.Sprintf("ConcessionsAvailable(): Incorrect number of arguments. Expecting 3, received %d", len(args))
@@ -422,9 +400,10 @@ func ConcessionsAvailable(stub shim.ChaincodeStubInterface, args []string) (Conc
 	theater := args[0]
 	conID := args[1]
 	quantity := args[2]
-	showTime := args[3]
+	//showTime := args[3]
+	id := fmt.Sprintf("%s-%s", theater, conID)
 
-	bytes, err := stub.GetState(conID)
+	bytes, err := stub.GetState(id)
 	if err != nil {
 		return con, fmt.Errorf("ConcessionsAvailable failed to get show information for: %s", conID)
 	}
@@ -438,18 +417,21 @@ func ConcessionsAvailable(stub shim.ChaincodeStubInterface, args []string) (Conc
 	if q > i {
 		return con, fmt.Errorf("Error - Out of Concessions: Attempting to buy %s units of %s at theater %s, but only %s are available", quantity, conID, theater, con.Inventory)
 	}
-
-	// Check here for >= 200 sodas for this showTime
-	if showTime == "xyz" {
-		return con, nil
+	//Make sure there are enough sodas for this showTime
+	if conID == "soda" {
+		_, err = SodasAvailable(stub, args[2:])
+		if err != nil {
+			//not enough sodas available for this showtime
+			fmt.Println(err)
+			return con, err
+		}
 	}
-
 	return con, nil
 }
 
 // SodasAvailable verifies a quantity of sodas are available for a given showTime
 func SodasAvailable(stub shim.ChaincodeStubInterface, args []string) (SodaCount, error) {
-
+	printArgs("SodasAvailable", args)
 	var scount SodaCount
 	if len(args) != 2 {
 		msg := fmt.Sprintf("SodasAvailable(): Incorrect number of arguments. Expecting 2, received %d", len(args))
@@ -471,7 +453,7 @@ func SodasAvailable(stub shim.ChaincodeStubInterface, args []string) (SodaCount,
 	if total > 200 {
 		return scount, fmt.Errorf("Error - Out of Concessions: 200 sodas is the limit for a single showTime. Attempting to buy %s units of sodas for showTime %s, but  %s have been sold", quantity, showTime, scount.Quantity)
 	}
-	fmt.Printf("Sodas sold for showTime %s is %s, now requesting %s", showTime, scount.Quantity, quantity)
+	fmt.Printf("Sodas sold for showTime %s is %s, now requesting %s \n", showTime, scount.Quantity, quantity)
 
 	//update the showTime with the new number of purchased sodas
 	quantity = fmt.Sprintf("%d", total)

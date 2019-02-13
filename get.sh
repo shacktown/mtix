@@ -1,8 +1,7 @@
 # get the provided key from the ledger
 set -x
 CC=mtix
-CHAN=myc
-theater="Regal1"
+CHAN=mychannel
 
 echo Getting information for key $1
 echo ------------------------------

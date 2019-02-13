@@ -2,7 +2,7 @@
 #   for this example the theater is Regal1
 set -x
 CC=mtix
-CHAN=myc
+CHAN=mychannel
 theater="Regal1"
 
 peer chaincode invoke  -n $CC -C $CHAN -c '{"Args":["StockConcession", "'$theater'", "soda",  "100", "7.00"]}'
